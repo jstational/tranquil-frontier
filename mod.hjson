@@ -3,11 +3,10 @@ displayName: "Tranquil Frontier"
 description:
 '''
 peaceful mod
+your goal is to make as much power as possible
 
 [#BBBBCC]HIGHLY inspired by Carpe Diem (nullotte/carpe-diem) try that out too!
-This mod uses Java for a few custom things.
-
-[#AAAABB]btw if you like action this mod may not be your type.
+This mod uses Java for a few custom things
 '''
 author: "jstation"
 minGameVersion: 159
