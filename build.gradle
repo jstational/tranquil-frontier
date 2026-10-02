@@ -1,30 +1,122 @@
 import org.gradle.jvm.tasks.Jar
-import java.io.file.Files
-import java.io.file.Paths
+import java.nio.file.*
+import java.io.*
+import java.util.zip.*
+import java.util.*
 
 plugins {
     java
 }
 
-// this repo contains code that will be merged into src
-val otherURL = "https://github.com/jstational/g8tf.git"
-val otherR = "main"
-val otherDir = "src"
+// Mindustry version to depend on.
+// Valid values:
+// - latest: depend on the latest release of mindustry
+// - be: depend on the very latest commit of mindustry
+// - v<number>: depend on a specific commit
+val mindustryVersion = "latest"
 
-version = "1.0"
+val javaVersion = "mindustryJavaVersion"
 
-sourceSets.main.java.srcDirs("src/java")
+object dirs {
+    val coreDir = "core"
+    val assetDir = dirs.coreDir + "/assets"
 
-// this was converted to kotlin cause im more familiar with it
-// i might learn Groovy for my tech stack sometime
+    object source {
+        val sourceDir = dirs.coreDir + "/mod/src"
 
-// always assumes src/javascript exists, if a refactor changes src/javascript's path, change this too
-tasks.register("rename") {
-    doFirst {
-        val target = layout.projectDirectory.dir("src/javascript").asFile.toPath()
-        val new = layout.projectDirectory.dir("src/scripts").asFile.toPath()
+        val javaSourceDir = dirs.source.sourceDir + "/java"
+    }
+}
 
-        Files.move(target, new)
+sourceSets.main.get().java.srcDirs(dirs.source.javaSourceDir)
+sourceSets.main.get().resources.srcDirs(dirs.assetDir)
+val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+
+java {
+    val ver = if(javaVersion == "latest") JavaVersion.entries.last() else if(javaVersion == "mindustryJavaVersion") JavaVersion.VERSION_17 else try {
+        JavaVersion.toVersion(javaVersion)
+    } catch(e: IllegalArgumentException) {
+        JavaVersion.VERSION_17
+    }
+
+    targetCompatibility = ver
+    sourceCompatibility = ver
+}
+
+dependencies {
+    compileOnly(if(mindustryVersion == "be") "Anuken:MindustryBuilds:latest" else "Anuken:Mindustry:" + mindustryVersion)
+}
+
+val jar = tasks.named<Jar>("jar") { // override jar task -> jar
+    archiveFileName.set("jar.jar")
+    from(sourceSets.main.get().output)
+}
+
+fun buildDir(fi: String): File {
+    return layout.buildDirectory.file(fi).get().asFile
+}
+
+fun buildDirProv(fi: String): Provider<RegularFile> {
+    return layout.buildDirectory.file(fi)
+}
+
+val dex = tasks.register("dex") {
+    dependsOn(jar)
+
+    val sdkRoot = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT") ?: throw GradleException("SDK env var does not exist")
+    
+    outputs.file(buildDirProv("libs/dex.zip"))
+
+    doLast {
+        val d8 = if(isWindows) "d8.bat" else "d8"
+        val d8Path = if(sdkRoot.isNotEmpty()) sdkRoot + "/build-tools/33.0.3/" + d8 else d8
+        val androidJar = if(sdkRoot.isNotEmpty()) sdkRoot + "/platforms/android-33/android.jar" else "android.jar"
+
+        if(!File(androidJar).exists()) print("android.jar doesnt exist")
+        if(!File(d8Path).exists()) print("d8 doesnt exist")
+
+        buildDirProv("libs/dex.zip").get().asFile.parentFile.mkdirs()
+
+        val classpaths = configurations.compileClasspath.get().files + configurations.runtimeClasspath.get().files + File(androidJar)
+        
+        val commands = mutableListOf(
+            d8Path, "--min-api", "14", "--output", buildDir("libs/dex.zip").absolutePath, jar.get().archiveFile.get().asFile.absolutePath
+        )
+
+        classpaths.forEach { file ->
+            if(file.exists()) {
+                commands.add("--classpath")
+                commands.add(file.absolutePath)
+            }
+        }
+
+        val process = ProcessBuilder(commands).directory(layout.buildDirectory.asFile.get()).redirectOutput(ProcessBuilder.Redirect.INHERIT).redirectError(ProcessBuilder.Redirect.INHERIT).start()
+
+        val result = process.waitFor()
+
+        if(!buildDirProv("libs/dex.zip").get().getAsFile().exists()) print("libs/dex.zip does not exist!")
+        print("d8 returned " + result)
+    }
+}
+
+tasks.register<Jar>("deploy") { // include jar and dex -> jar
+    dependsOn(dex)
+    archiveFileName.set(project.name + ".jar")
+
+    from(zipTree(buildDirProv("libs/jar.jar")))
+    from(zipTree(buildDirProv("libs/dex.zip")))
+
+    from(dirs.coreDir) {
+        include("assets/**")
+        exclude("assets/icon.png")
+    }
+
+    from(dirs.assetDir) {
+        include("icon.png")
+    }
+
+    from(projectDir) {
+        include("mod.json")
     }
 }
 
@@ -68,89 +160,5 @@ repositories {
         metadataSources {
             artifact()
         }
-    }
-}
-
-java {
-    targetCompatibility = JavaVersion.VERSION_17
-    sourceCompatibility = JavaVersion.VERSION_17
-}
-
-// Mindustry version to depend on.
-// Valid values:
-// - latest: depend on the latest release of mindustry
-// - be: depend on the very latest commit of mindustry
-// - v<number>: depend on a specific commit
-val mindustryVersion = "latest"
-val isWindows = System.getProperty("os.name").toLowerCase().contains("windows")
-val sdkRoot = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
-
-dependencies {
-    compileOnly(
-        if(mindustryVersion == "be") "Anuken:MindustryBuilds:latest" else "Anuken:Mindustry:$mindustryVersion"
-    )
-}
-
-val jarAndroid = tasks.register("jarAndroid") {
-    dependsOn("jar")
-    val projectName = project.name
-    val noAndroidSDK: String = "No valid Android SDK found. Ensure that ANDROID_HOME is set to your Android SDK directory."
-    val noAndroidJar: String = "No android.jar found. Ensure that you have an Android platform installed."
-
-    doLast {
-        if(sdkRoot.isNullOrEmpty() || !new File(sdkRoot).exists()) throw new GradleException(noAndroidSDK)
-
-        val platformRoot = File("$sdkRoot/platforms/").listFiles().sortedDescending.find {
-                File(it, "android.jar")
-            }
-
-        if(!platformRoot) throw new GradleException(noAndroidJar)
-
-        //collect dependencies needed for desugaring
-        val dependencies = (configurations.get().files + configurations.runtimeClasspath.get().files + File(platformRoot, "android.jar")).joinToString(" ") { "--classpath ${it.path}" }
-
-        val d8 = isWindows ? "d8.bat" else "d8"
-
-        //dex and desugar files - this requires d8 in your PATH
-        val commands = "$d8 $dependencies --min-api 14 --output ${projectName}Android.jar ${projectName}Desktop.jar"
-        val dexAndDesugar = ProcessBuilder(commands.split(" ")).directory(File("build/libs")).redirectOutput(ProcessBuilder.Redirect.INHERIT).redirectError(ProcessBuilder.Redirect.INHERIT).start()
-        dexAndDesugar.waitFor()
-    }
-}
-
-tasks.jar {
-    archiveFileName = "${project.name}Desktop.jar"
-
-    from({
-        configurations.runtimeClasspath.get().map {
-            it.isDirectory() ? it else zipTree(it)
-        }
-    })
-
-    from("assets/") {
-        include("**")
-    }
-
-    from("src/") {
-        include("scripts")
-    }
-
-    from(projectDir) {
-        include("mod.hjson")
-    }
-}
-
-tasks.register<Jar>("deploy") {
-    val projectName = project.name
-    dependsOn(jarAndroid)
-    dependsOn(jar)
-    archiveFileName.set("${projectName}.jar")
-
-    from({
-        listOf(zipTree("build/libs/${projectName}Desktop.jar"), zipTree("build/libs/${projectName}Android.jar"))
-    })
-
-    doLast {
-        delete("build/libs/${projectName}Android.jar")
     }
 }

@@ -3,5 +3,5 @@ package tf;
 import mindustry.mod.Mod;
 
 public class TranquilFrontier extends Mod {
-    public String desc = ""
+    public String desc = "";
 }

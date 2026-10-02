@@ -6,11 +6,10 @@ peaceful mod
 your goal is to make as much power as possible
 
 [#BBBBCC]HIGHLY inspired by Carpe Diem (nullotte/carpe-diem) try that out too!
-This mod uses Java for a few custom things
+this mod uses Java for a few custom things
 '''
 author: "jstation"
 minGameVersion: 159
 version: "0.0.0"
-subtitle: "[#67a690]Seize [#578e91]the [#577594]Night"
-repo: jstational/Tranquil-Frontier
-hidden: true
+hidden: false
+java: true
