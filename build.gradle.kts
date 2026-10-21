@@ -19,17 +19,10 @@ val javaVersion = "mindustryJavaVersion"
 
 object dirs {
     val coreDir = "core"
-    val assetDir = dirs.coreDir + "/assets"
-
-    object source {
-        val sourceDir = dirs.coreDir + "/mod/src"
-
-        val javaSourceDir = dirs.source.sourceDir + "/java"
-    }
+    val sourceDir = dirs.coreDir + "/src"
 }
 
-sourceSets.main.get().java.srcDirs(dirs.source.javaSourceDir)
-sourceSets.main.get().resources.srcDirs(dirs.assetDir)
+sourceSets.main.get().java.srcDirs(dirs.sourceDir)
 val isWindows = System.getProperty("os.name").lowercase().contains("windows")
 
 java {
@@ -75,27 +68,29 @@ val dex = tasks.register("dex") {
         if(!File(androidJar).exists()) print("android.jar doesnt exist")
         if(!File(d8Path).exists()) print("d8 doesnt exist")
 
-        buildDirProv("libs/dex.zip").get().asFile.parentFile.mkdirs()
+        if(File(androidJar).exists() && File(d8Path).exists()) {
+            buildDirProv("libs/dex.zip").get().asFile.parentFile.mkdirs()
 
-        val classpaths = configurations.compileClasspath.get().files + configurations.runtimeClasspath.get().files + File(androidJar)
-        
-        val commands = mutableListOf(
-            d8Path, "--min-api", "14", "--output", buildDir("libs/dex.zip").absolutePath, jar.get().archiveFile.get().asFile.absolutePath
-        )
+            val classpaths = configurations.compileClasspath.get().files + configurations.runtimeClasspath.get().files + File(androidJar)
 
-        classpaths.forEach { file ->
-            if(file.exists()) {
-                commands.add("--classpath")
-                commands.add(file.absolutePath)
+            val commands = mutableListOf(
+                d8Path, "--min-api", "14", "--output", buildDir("libs/dex.zip").absolutePath, jar.get().archiveFile.get().asFile.absolutePath
+            )
+
+            classpaths.forEach { file ->
+                if(file.exists()) {
+                    commands.add("--classpath")
+                    commands.add(file.absolutePath)
+                }
             }
+
+            val process = ProcessBuilder(commands).directory(layout.buildDirectory.asFile.get()).redirectOutput(ProcessBuilder.Redirect.INHERIT).redirectError(ProcessBuilder.Redirect.INHERIT).start()
+
+            val result = process.waitFor()
+
+            if(!buildDirProv("libs/dex.zip").get().getAsFile().exists()) print("libs/dex.zip does not exist!")
+            print("d8 returned " + result)
         }
-
-        val process = ProcessBuilder(commands).directory(layout.buildDirectory.asFile.get()).redirectOutput(ProcessBuilder.Redirect.INHERIT).redirectError(ProcessBuilder.Redirect.INHERIT).start()
-
-        val result = process.waitFor()
-
-        if(!buildDirProv("libs/dex.zip").get().getAsFile().exists()) print("libs/dex.zip does not exist!")
-        print("d8 returned " + result)
     }
 }
 
@@ -104,16 +99,16 @@ tasks.register<Jar>("deploy") { // include jar and dex -> jar
     archiveFileName.set(project.name + ".jar")
 
     from(zipTree(buildDirProv("libs/jar.jar")))
-    from(zipTree(buildDirProv("libs/dex.zip")))
+
+    if(buildDir("libs/dex.zip").exists()) {
+        from(zipTree(buildDirProv("libs/dex.zip")))
+    }
 
     from(dirs.coreDir) {
         include("assets/**")
-        exclude("assets/icon.png")
     }
 
-    from(dirs.assetDir) {
-        include("icon.png")
-    }
+    from(dirs.coreDir + "/assets-root")
 
     from(projectDir) {
         include("mod.json")

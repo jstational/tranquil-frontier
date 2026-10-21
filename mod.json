@@ -1,0 +1,10 @@
+{
+    "name": "tf",
+    "displayName": "Tranquil Frontier",
+    "description":"your goal is to make as much power as possible\ntry this: Carpe Diem",
+    "author": "jstation",
+    "minGameVersion": 159,
+    "version": "0.0.1",
+    "hidden": false,
+    "java": true
+}
