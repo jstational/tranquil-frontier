@@ -1,9 +1,9 @@
 package tf.world.blocks.distribution.power;
 
-import mindustry.world.Block;
+import mindustry.world.power.*;
 import mindustry.gen.Building;
 
-public class PowerDriver extends Block {
+public class PowerDriver extends PowerBlock {
     public PowerDriver(String name) {
         super(name);
     }
